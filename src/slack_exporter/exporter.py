@@ -5,12 +5,14 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable
 
+from slack_exporter.formatting import conversation_title, user_display_names
 from slack_exporter.slack_api import ApiError, AuthError, DownloadError
 from slack_exporter.storage import FORMAT_VERSION, Archive
 
 ALL_TYPES = ("public", "private", "im", "mpim")
 _API_TYPES = {"public": "public_channel", "private": "private_channel", "im": "im", "mpim": "mpim"}
 _SKIPPED_FILE_MODES = frozenset({"tombstone", "external", "hidden_by_limit"})
+PROGRESS_EVERY = 200  # une ligne de statut par page de messages
 
 
 @dataclass
@@ -29,6 +31,33 @@ class ExportResult:
     errors: list[dict] = field(default_factory=list)
 
 
+class _Progress:
+    """État courant d'une conversation, émis sous forme d'une ligne de statut."""
+
+    def __init__(self, prefix: str, emit: Callable[[str], None]) -> None:
+        self.prefix = prefix
+        self._emit = emit
+        self._last: str | None = None
+        self.messages = 0
+        self.threads_done = self.threads_total = 0
+        self.files_done = self.files_total = 0
+        self.current_file: str | None = None
+
+    def update(self) -> None:
+        parts = [f"messages : {self.messages}"]
+        if self.threads_total:
+            parts.append(f"fils : {self.threads_done}/{self.threads_total}")
+        if self.files_total:
+            files = f"fichiers : {self.files_done}/{self.files_total}"
+            if self.current_file:
+                files += f" ({self.current_file})"
+            parts.append(files)
+        status = f"⏳ {self.prefix} — " + " · ".join(parts)
+        if status != self._last:
+            self._last = status
+            self._emit(status)
+
+
 def conversation_type(conv: dict) -> str:
     if conv.get("is_im"):
         return "im"
@@ -44,8 +73,12 @@ def export(
     archive: Archive,
     options: ExportOptions,
     log: Callable[[str], None] = print,
+    progress: Callable[[str], None] = lambda status: None,
 ) -> ExportResult:
-    """Exporte les conversations sélectionnées. `api` expose l'interface de SlackApi."""
+    """Exporte les conversations sélectionnées. `api` expose l'interface de SlackApi.
+
+    `log` reçoit les lignes définitives, `progress` les lignes de statut temporaires.
+    """
     identity = api.auth_test()
     log(f"Connecté à {identity.get('team')} en tant que {identity.get('user')}")
     result = ExportResult()
@@ -59,20 +92,25 @@ def export(
     previous = archive.read_json("channels.json", [])
     archive.write_json("channels.json", _merge_conversations(previous, conversations))
 
+    names = user_display_names(users)
     state = {"completed": [], "in_progress": None} if options.refresh else archive.load_state()
-    for conv in conversations:
+    for index, conv in enumerate(conversations, start=1):
         channel_id = conv["id"]
-        label = conv["name"] or channel_id
+        label = f"[{index}/{len(conversations)}] {conversation_title(conv, names, identity.get('user_id'))}"
+        tracker = _Progress(label, progress)
         if channel_id in state["completed"]:
             # Les fichiers déjà présents sont sautés : seuls les échecs précédents sont retentés.
+            tracker.messages = len(archive.read_messages(channel_id))
             stored = _stored_messages(archive, channel_id)
-            _download_files(api, archive, channel_id, stored, options.refresh, result.errors)
+            _download_files(api, archive, channel_id, stored, options.refresh, result.errors, tracker)
             log(f"= {label} : déjà exporté")
             continue
         state["in_progress"] = channel_id
         archive.save_state(state)
         try:
-            messages, files = _export_conversation(api, archive, channel_id, options, result.errors)
+            messages, files = _export_conversation(
+                api, archive, channel_id, options, result.errors, tracker
+            )
         except AuthError:
             raise
         except ApiError as exc:
@@ -148,22 +186,40 @@ def _select_conversations(api: Any, options: ExportOptions) -> list[dict]:
 
 
 def _export_conversation(
-    api: Any, archive: Archive, channel_id: str, options: ExportOptions, errors: list[dict]
+    api: Any,
+    archive: Archive,
+    channel_id: str,
+    options: ExportOptions,
+    errors: list[dict],
+    tracker: _Progress,
 ) -> tuple[int, int]:
     archive.reset_conversation(channel_id)
     oldest = f"{options.since:.6f}" if options.since is not None else None
-    messages = sorted(api.iter_history(channel_id, oldest=oldest), key=lambda m: float(m["ts"]))
+    tracker.update()
+    fetched = []
+    for message in api.iter_history(channel_id, oldest=oldest):
+        fetched.append(message)
+        if len(fetched) % PROGRESS_EVERY == 0:
+            tracker.messages = len(fetched)
+            tracker.update()
+    tracker.messages = len(fetched)
+    tracker.update()
+    messages = sorted(fetched, key=lambda m: float(m["ts"]))
     archive.write_messages(channel_id, messages)
 
     with_files = list(messages)
-    for message in messages:
-        if message.get("reply_count", 0) > 0:
-            thread_ts = message["ts"]
-            replies = [r for r in api.iter_replies(channel_id, thread_ts) if r.get("ts") != thread_ts]
-            archive.write_replies(channel_id, thread_ts, replies)
-            with_files.extend(replies)
+    threads = [m for m in messages if m.get("reply_count", 0) > 0]
+    tracker.threads_total = len(threads)
+    for message in threads:
+        tracker.update()
+        thread_ts = message["ts"]
+        replies = [r for r in api.iter_replies(channel_id, thread_ts) if r.get("ts") != thread_ts]
+        archive.write_replies(channel_id, thread_ts, replies)
+        with_files.extend(replies)
+        tracker.threads_done += 1
+    tracker.update()
 
-    files = _download_files(api, archive, channel_id, with_files, options.refresh, errors)
+    files = _download_files(api, archive, channel_id, with_files, options.refresh, errors, tracker)
     return len(messages), files
 
 
@@ -174,21 +230,36 @@ def _download_files(
     messages: list[dict],
     refresh: bool,
     errors: list[dict],
+    tracker: _Progress,
 ) -> int:
-    available = 0
-    for message in messages:
-        for file in message.get("files", []):
-            url = file.get("url_private_download") or file.get("url_private")
-            if "id" not in file or not url or file.get("mode") in _SKIPPED_FILE_MODES:
-                continue
-            dest = archive.attachment_path(channel_id, file)
-            if dest.exists() and not refresh:
-                available += 1
-                continue
-            try:
-                api.download(url, dest, file.get("mimetype"))
-            except DownloadError as exc:
-                errors.append({"channel": channel_id, "file": file["id"], "error": str(exc)})
-                continue
+    candidates = [
+        file
+        for message in messages
+        for file in message.get("files", [])
+        if "id" in file
+        and (file.get("url_private_download") or file.get("url_private"))
+        and file.get("mode") not in _SKIPPED_FILE_MODES
+    ]
+    pending = []
+    for file in candidates:
+        dest = archive.attachment_path(channel_id, file)
+        if dest.exists() and not refresh:
+            tracker.files_done += 1
+        else:
+            pending.append((file, dest))
+    tracker.files_total = len(candidates)
+    available = tracker.files_done
+
+    for file, dest in pending:
+        tracker.current_file = file.get("name") or file["id"]
+        tracker.update()
+        try:
+            api.download(file.get("url_private_download") or file["url_private"], dest, file.get("mimetype"))
+        except DownloadError as exc:
+            errors.append({"channel": channel_id, "file": file["id"], "error": str(exc)})
+        else:
             available += 1
+        tracker.files_done += 1
+    tracker.current_file = None
+    tracker.update()
     return available

@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import os
+import shutil
+import sys
 from datetime import timezone
 from pathlib import Path
+from typing import TextIO
 
 import click
 
@@ -14,6 +17,48 @@ from slack_exporter.renderer import RenderError
 from slack_exporter.renderer import render as run_render
 from slack_exporter.slack_api import AuthError
 from slack_exporter.storage import Archive
+
+
+class StatusLine:
+    """Ligne de statut réécrite sur place (`\\r`), affichée seulement dans un terminal."""
+
+    def __init__(self, stream: TextIO, width: int | None = None) -> None:
+        self._stream = stream
+        self._enabled = stream.isatty()
+        # Marge de 2 colonnes : l'emoji ⏳ occupe deux colonnes à l'écran.
+        self._width = (width or shutil.get_terminal_size().columns) - 2
+        self._current = ""
+
+    def update(self, status: str) -> None:
+        if not self._enabled:
+            return
+        status = status[: self._width]
+        self._stream.write("\r" + status.ljust(len(self._current)))
+        self._stream.flush()
+        self._current = status
+
+    def line(self, message: str) -> None:
+        """Ligne définitive : remplace le statut, qui est oublié."""
+        self._clear()
+        self._current = ""
+        self._write_line(message)
+
+    def note(self, message: str) -> None:
+        """Ligne ponctuelle (pause Slack…) : le statut est réaffiché en dessous."""
+        status = self._current
+        self._clear()
+        self._current = ""
+        self._write_line(message)
+        if status:
+            self.update(status)
+
+    def _clear(self) -> None:
+        if self._enabled and self._current:
+            self._stream.write("\r" + " " * len(self._current) + "\r")
+
+    def _write_line(self, message: str) -> None:
+        self._stream.write(message + "\n")
+        self._stream.flush()
 
 
 def _parse_types(value: str) -> tuple[str, ...]:
@@ -61,8 +106,11 @@ def export(out_dir: Path, types: str, since, only: tuple[str, ...], refresh: boo
         refresh=refresh,
     )
     try:
-        api = build_api(credentials, notify=click.echo)
-        result = run_export(api, Archive(out_dir), options, log=click.echo)
+        status = StatusLine(sys.stdout)
+        api = build_api(credentials, notify=status.note)
+        result = run_export(
+            api, Archive(out_dir), options, log=status.line, progress=status.update
+        )
     except AuthError as exc:
         raise click.ClickException(
             f"Slack a refusé l'authentification ({exc.code}). Vérifiez SLACK_TOKEN et SLACK_COOKIE_D."

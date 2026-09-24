@@ -55,7 +55,7 @@ def test_messages_are_stored_in_chronological_order(tmp_path):
 
     assert [m["text"] for m in archive.read_messages("C1")] == ["a", "b", "c"]
     assert result.messages == 3
-    assert logs[-1] == "✓ general : 3 messages, 0 fichiers"
+    assert logs[-1] == "✓ [1/1] #general : 3 messages, 0 fichiers"
 
 
 def test_thread_replies_are_stored_without_parent(tmp_path):
@@ -133,7 +133,7 @@ def test_channel_api_error_is_recorded_and_other_channels_exported(tmp_path):
 
     assert result.errors == [{"channel": "C1", "error": "not_in_channel"}]
     assert archive.read_messages("G1") == [msg("1.0", "ok")]
-    assert "! general : not_in_channel" in logs
+    assert "! [1/2] #general : not_in_channel" in logs
     assert archive.load_state() == {"completed": ["G1"], "in_progress": None}
 
 
@@ -157,7 +157,7 @@ def test_resume_skips_completed_and_redoes_interrupted(tmp_path):
 
     assert second.calls_named("history") == [("history", "G1", None)]
     assert second.calls_named("download") == []
-    assert "= general : déjà exporté" in logs
+    assert "= [1/2] #general : déjà exporté" in logs
     assert archive.read_messages("G1") == [msg("2.0", "b")]
     assert archive.load_state() == {"completed": ["C1", "G1"], "in_progress": None}
 
@@ -243,3 +243,52 @@ def test_conversation_without_is_member_flag_is_kept(tmp_path):
     api = FakeApi(conversations=[{"id": "C3", "name": "projet", "is_channel": True}])
     archive, _, _ = run(api, tmp_path)
     assert [c["id"] for c in archive.read_json("channels.json")] == ["C3"]
+
+
+def run_with_progress(api, tmp_path, **options):
+    statuses = []
+    logs = []
+    export(api, Archive(tmp_path / "archive"), ExportOptions(**options),
+           log=logs.append, progress=statuses.append)
+    return statuses, logs
+
+
+def test_direct_messages_are_labelled_with_the_other_persons_name(tmp_path):
+    api = FakeApi(users=[{"id": "U2", "name": "bob", "profile": {"real_name": "Bob Martin"}}],
+                  conversations=[DM], history={"D1": [msg("1.0", "salut", user="U2")]})
+    _, _, logs = run(api, tmp_path)
+    assert logs[-1] == "✓ [1/1] Bob Martin : 1 messages, 0 fichiers"
+
+
+def test_progress_reports_messages_threads_and_files(tmp_path):
+    parent = msg("1.0", "q", reply_count=1, files=[slack_file("F1", "rapport.pdf")])
+    api = FakeApi(
+        conversations=[GENERAL],
+        history={"C1": [msg("2.0", "b"), parent]},
+        replies={("C1", "1.0"): [parent, msg("1.1", "r", thread_ts="1.0")]},
+    )
+    statuses, _ = run_with_progress(api, tmp_path)
+
+    assert statuses[0] == "⏳ [1/1] #general — messages : 0"
+    assert "⏳ [1/1] #general — messages : 2" in statuses
+    assert "⏳ [1/1] #general — messages : 2 · fils : 1/1" in statuses
+    assert "⏳ [1/1] #general — messages : 2 · fils : 1/1 · fichiers : 0/1 (rapport.pdf)" in statuses
+    assert statuses[-1] == "⏳ [1/1] #general — messages : 2 · fils : 1/1 · fichiers : 1/1"
+
+
+def test_progress_updates_every_page_of_messages(tmp_path):
+    api = FakeApi(conversations=[GENERAL], history={"C1": [msg(f"{i}.0") for i in range(450, 0, -1)]})
+    statuses, _ = run_with_progress(api, tmp_path)
+
+    counts = [s.split("messages : ")[1] for s in statuses]
+    assert counts == ["0", "200", "400", "450"]
+
+
+def test_files_already_downloaded_count_as_done(tmp_path):
+    history = {"C1": [msg("1.0", files=[slack_file("F1"), slack_file("F2")])]}
+    run(FakeApi(conversations=[GENERAL], history=history), tmp_path)
+    Archive(tmp_path / "archive").save_state({"completed": [], "in_progress": None})
+
+    statuses, _ = run_with_progress(FakeApi(conversations=[GENERAL], history=history), tmp_path)
+
+    assert statuses[-1] == "⏳ [1/1] #general — messages : 1 · fichiers : 2/2"

@@ -125,8 +125,12 @@ fusionné par identifiant avec celui d'un export précédent, pour qu'un export 
 (`--only`, `--types`) ne masque pas les conversations déjà archivées.
 `--refresh` ignore `state.json` et les fichiers déjà présents.
 La progression affiche l'identité connectée, le nombre d'utilisateurs, le nombre de
-conversations à exporter, puis une ligne par conversation (nom, nombre de messages,
-fichiers). Chaque pause imposée par Slack (HTTP 429) est annoncée avec sa durée.
+conversations à exporter, puis une ligne `✓ [i/N] <titre> : …` par conversation
+(canal `#nom`, ou nom de l'interlocuteur pour un DM). Pendant l'export d'une
+conversation, une ligne de statut réécrite sur place (`\r`, seulement si la sortie est
+un terminal) indique les messages récupérés, les fils traités et les fichiers
+téléchargés, avec le nom du fichier en cours. Chaque pause imposée par Slack (HTTP 429)
+est annoncée avec sa durée.
 
 ## 5. Gestion des erreurs
 

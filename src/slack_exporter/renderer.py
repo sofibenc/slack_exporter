@@ -10,7 +10,13 @@ from pathlib import Path
 from jinja2 import Environment, PackageLoader, select_autoescape
 from markupsafe import Markup
 
-from slack_exporter.formatting import FormatContext, emoji_to_unicode, mrkdwn_to_html
+from slack_exporter.formatting import (
+    FormatContext,
+    conversation_title,
+    emoji_to_unicode,
+    mrkdwn_to_html,
+    user_display_names,
+)
 from slack_exporter.storage import FORMAT_VERSION, Archive, safe_join
 
 PAGE_THRESHOLD = 5000
@@ -27,30 +33,6 @@ _MONTHS = ("janvier", "février", "mars", "avril", "mai", "juin", "juillet",
 
 class RenderError(Exception):
     """Archive illisible ou incompatible."""
-
-
-def user_display_names(users: list[dict]) -> dict[str, str]:
-    names = {}
-    for user in users:
-        profile = user.get("profile") or {}
-        names[user["id"]] = (
-            profile.get("display_name")
-            or profile.get("real_name")
-            or user.get("real_name")
-            or user.get("name")
-            or user["id"]
-        )
-    return names
-
-
-def conversation_title(conv: dict, names: dict[str, str], self_id: str | None) -> str:
-    if conv["type"] in ("public", "private"):
-        return f"#{conv['name'] or conv['id']}"
-    members = conv.get("members") or []
-    others = [m for m in members if m != self_id] or members
-    if not others:
-        return conv.get("name") or conv["id"]
-    return ", ".join(names.get(m, m) for m in others)
 
 
 def french_date(dt: datetime) -> str:

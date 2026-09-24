@@ -51,7 +51,7 @@ def test_export_writes_archive_and_summary(tmp_path, fake_api):
     result = invoke(["export", "--out", str(tmp_path / "a")])
 
     assert result.exit_code == 0, result.output
-    assert "✓ general : 1 messages, 1 fichiers" in result.output
+    assert "✓ [1/2] #general : 1 messages, 1 fichiers" in result.output
     assert "Export terminé : 2 conversations, 2 messages, 1 fichiers." in result.output
     assert (tmp_path / "a" / "conversations" / "C1" / "messages.jsonl").exists()
     assert fake_api.received["credentials"].token == "xoxp-test"

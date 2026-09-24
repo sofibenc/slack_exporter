@@ -32,6 +32,30 @@ def emoji_to_unicode(name: str) -> str | None:
     return EMOJI.get(name.split("::", 1)[0])
 
 
+def user_display_names(users: list[dict]) -> dict[str, str]:
+    names = {}
+    for user in users:
+        profile = user.get("profile") or {}
+        names[user["id"]] = (
+            profile.get("display_name")
+            or profile.get("real_name")
+            or user.get("real_name")
+            or user.get("name")
+            or user["id"]
+        )
+    return names
+
+
+def conversation_title(conv: dict, names: dict[str, str], self_id: str | None) -> str:
+    if conv["type"] in ("public", "private"):
+        return f"#{conv['name'] or conv['id']}"
+    members = conv.get("members") or []
+    others = [m for m in members if m != self_id] or members
+    if not others:
+        return conv.get("name") or conv["id"]
+    return ", ".join(names.get(m, m) for m in others)
+
+
 def _unescape_slack(text: str) -> str:
     # Slack n'encode que ces trois entités dans le champ `text`.
     return text.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
