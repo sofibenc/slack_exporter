@@ -124,6 +124,16 @@ Une conversation déjà `completed` n'est pas réinterrogée, mais ses fichiers 
 fusionné par identifiant avec celui d'un export précédent, pour qu'un export partiel
 (`--only`, `--types`) ne masque pas les conversations déjà archivées.
 `--refresh` ignore `state.json` et les fichiers déjà présents.
+
+**Mise à jour (`--update`)** : pour chaque conversation `completed`, relire l'historique à
+partir de *(dernier message archivé − 30 jours)* et fusionner par `ts`. Les messages
+antérieurs à la fenêtre sont conservés tels quels, ceux de la fenêtre sont remplacés par
+la version Slack (modifications, réactions, suppressions), et les nouveaux sont ajoutés.
+Seuls les fils nouveaux ou dont `latest_reply` a changé sont relus. `messages.jsonl` est
+écrit en dernier, pour qu'une interruption laisse l'historique précédent intact.
+Les conversations non terminées sont exportées normalement. `--update` est incompatible
+avec `--refresh` et `--since`. Ligne finale :
+`↻ [i/N] <titre> : +X messages, Y fils mis à jour, Z fichiers`.
 La progression affiche l'identité connectée, le nombre d'utilisateurs, le nombre de
 conversations à exporter, puis une ligne `✓ [i/N] <titre> : …` par conversation
 (canal `#nom`, ou nom de l'interlocuteur pour un DM). Pendant l'export d'une
@@ -224,7 +234,7 @@ Approche TDD avec `pytest`. Aucun test n'appelle le vrai Slack.
 
 - Import dans Microsoft Teams (repost ou API d'import).
 - Recherche plein texte dans le site.
-- Export incrémental au-delà de la reprise d'un export interrompu.
+- Détection, par `--update`, de l'activité sur des messages antérieurs à la fenêtre de 30 jours.
 - Emojis personnalisés rendus en image (ils gardent leur texte `:nom:`).
 - Rendu fidèle des Block Kit et des messages d'apps (seul le texte de secours est rendu).
 - Canaux dont l'utilisateur n'est pas membre, et export administrateur du workspace.

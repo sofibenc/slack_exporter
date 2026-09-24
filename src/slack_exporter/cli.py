@@ -89,12 +89,21 @@ def main() -> None:
               help="Nom ou identifiant d'une conversation à exporter (répétable).")
 @click.option("--refresh", is_flag=True,
               help="Tout réexporter, y compris les conversations et fichiers déjà récupérés.")
-def export(out_dir: Path, types: str, since, only: tuple[str, ...], refresh: bool) -> None:
+@click.option("--update", is_flag=True,
+              help="Mettre à jour les conversations déjà exportées : nouveaux messages, et "
+                   "modifications des 30 derniers jours.")
+def export(
+    out_dir: Path, types: str, since, only: tuple[str, ...], refresh: bool, update: bool
+) -> None:
     """Exporte les conversations depuis Slack vers OUT_DIR.
 
     Le token est lu dans SLACK_TOKEN (xoxp-… ou xoxc-…), et le cookie de session
     dans SLACK_COOKIE_D pour un token xoxc-.
     """
+    if update and refresh:
+        raise click.UsageError("--update est incompatible avec --refresh (qui relit déjà tout).")
+    if update and since:
+        raise click.UsageError("--update est incompatible avec --since.")
     try:
         credentials = credentials_from_env(os.environ)
     except ConfigError as exc:
@@ -104,6 +113,7 @@ def export(out_dir: Path, types: str, since, only: tuple[str, ...], refresh: boo
         since=since.replace(tzinfo=timezone.utc).timestamp() if since else None,
         only=tuple(o.lstrip("#") for o in only),
         refresh=refresh,
+        update=update,
     )
     try:
         status = StatusLine(sys.stdout)

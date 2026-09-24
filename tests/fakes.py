@@ -61,7 +61,10 @@ class FakeApi:
         self.calls.append(("history", channel_id, oldest))
         if channel_id in self.failing_channels:
             raise self.failing_channels[channel_id]
-        return iter(self.history.get(channel_id, []))
+        messages = self.history.get(channel_id, [])
+        if oldest is not None:  # comme Slack : strictement postérieurs à `oldest`
+            messages = [m for m in messages if float(m["ts"]) > float(oldest)]
+        return iter(messages)
 
     def iter_replies(self, channel_id, thread_ts):
         self.calls.append(("replies", channel_id, thread_ts))

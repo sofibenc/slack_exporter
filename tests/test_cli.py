@@ -103,3 +103,18 @@ def test_render_rejects_non_archive(tmp_path):
     result = invoke(["render", "--archive", str(tmp_path / "vide"), "--site", str(tmp_path / "site")])
     assert result.exit_code == 1
     assert "meta.json" in result.output
+
+
+@pytest.mark.parametrize("extra", [["--refresh"], ["--since", "2024-01-01"]])
+def test_update_rejects_incompatible_options(tmp_path, fake_api, extra):
+    result = invoke(["export", "--out", str(tmp_path / "a"), "--update", *extra])
+    assert result.exit_code == 2
+    assert f"--update est incompatible avec {extra[0]}" in result.output
+
+
+def test_update_rereads_completed_conversations(tmp_path, fake_api):
+    assert invoke(["export", "--out", str(tmp_path / "a")]).exit_code == 0
+    result = invoke(["export", "--out", str(tmp_path / "a"), "--update"])
+
+    assert result.exit_code == 0, result.output
+    assert "↻ [1/2] #general : +0 messages, 0 fils mis à jour, 1 fichiers" in result.output

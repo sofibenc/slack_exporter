@@ -1,4 +1,4 @@
-"""Orchestration de l'export : Slack -> archive sur disque, avec reprise."""
+"""Orchestration de l'export : Slack -> archive sur disque, avec reprise et mise à jour."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -13,6 +13,7 @@ ALL_TYPES = ("public", "private", "im", "mpim")
 _API_TYPES = {"public": "public_channel", "private": "private_channel", "im": "im", "mpim": "mpim"}
 _SKIPPED_FILE_MODES = frozenset({"tombstone", "external", "hidden_by_limit"})
 PROGRESS_EVERY = 200  # une ligne de statut par page de messages
+UPDATE_WINDOW = 30 * 86400  # --update relit les 30 jours précédant le dernier message archivé
 
 
 @dataclass
@@ -21,6 +22,7 @@ class ExportOptions:
     since: float | None = None  # timestamp Unix : n'exporter que les messages postérieurs
     only: tuple[str, ...] = ()  # noms ou identifiants de conversations
     refresh: bool = False
+    update: bool = False  # relire la fenêtre récente des conversations déjà exportées
 
 
 @dataclass
@@ -98,6 +100,22 @@ def export(
         channel_id = conv["id"]
         label = f"[{index}/{len(conversations)}] {conversation_title(conv, names, identity.get('user_id'))}"
         tracker = _Progress(label, progress)
+        if channel_id in state["completed"] and options.update:
+            try:
+                new, threads, files = _update_conversation(
+                    api, archive, channel_id, result.errors, tracker
+                )
+            except AuthError:
+                raise
+            except ApiError as exc:
+                result.errors.append({"channel": channel_id, "error": exc.code})
+                log(f"! {label} : {exc.code}")
+                continue
+            result.conversations += 1
+            result.messages += new
+            result.files += files
+            log(f"↻ {label} : +{new} messages, {threads} fils mis à jour, {files} fichiers")
+            continue
         if channel_id in state["completed"]:
             # Les fichiers déjà présents sont sautés : seuls les échecs précédents sont retentés.
             tracker.messages = len(archive.read_messages(channel_id))
@@ -195,6 +213,45 @@ def _export_conversation(
 ) -> tuple[int, int]:
     archive.reset_conversation(channel_id)
     oldest = f"{options.since:.6f}" if options.since is not None else None
+    messages = _fetch_history(api, channel_id, oldest, tracker)
+    archive.write_messages(channel_id, messages)
+    threads = [m for m in messages if m.get("reply_count", 0) > 0]
+    replies = _fetch_threads(api, archive, channel_id, threads, tracker)
+    files = _download_files(api, archive, channel_id, messages + replies, options.refresh, errors, tracker)
+    return len(messages), files
+
+
+def _update_conversation(
+    api: Any, archive: Archive, channel_id: str, errors: list[dict], tracker: _Progress
+) -> tuple[int, int, int]:
+    """Relit la fenêtre récente d'une conversation exportée et la fusionne à l'archive.
+
+    Renvoie (nouveaux messages, fils relus, fichiers disponibles).
+    """
+    stored = archive.read_messages(channel_id)
+    window_start = float(stored[-1]["ts"]) - UPDATE_WINDOW if stored else None
+    oldest = f"{window_start:.6f}" if window_start is not None else None
+    fetched = _fetch_history(api, channel_id, oldest, tracker)
+
+    previous = {m["ts"]: m for m in stored}
+    # Slack exclut `oldest` : un message pile à cette date n'est pas renvoyé, on le garde.
+    kept = [m for m in stored if window_start is not None and float(m["ts"]) <= window_start]
+    new = sum(1 for m in fetched if m["ts"] not in previous)
+    threads = [
+        m for m in fetched
+        if m.get("reply_count", 0) > 0
+        and (m["ts"] not in previous or previous[m["ts"]].get("latest_reply") != m.get("latest_reply"))
+    ]
+    _fetch_threads(api, archive, channel_id, threads, tracker)
+    # Écrit en dernier : une interruption laisse l'historique précédent intact.
+    archive.write_messages(channel_id, kept + fetched)
+
+    stored_now = _stored_messages(archive, channel_id)
+    files = _download_files(api, archive, channel_id, stored_now, False, errors, tracker)
+    return new, len(threads), files
+
+
+def _fetch_history(api: Any, channel_id: str, oldest: str | None, tracker: _Progress) -> list[dict]:
     tracker.update()
     fetched = []
     for message in api.iter_history(channel_id, oldest=oldest):
@@ -204,23 +261,24 @@ def _export_conversation(
             tracker.update()
     tracker.messages = len(fetched)
     tracker.update()
-    messages = sorted(fetched, key=lambda m: float(m["ts"]))
-    archive.write_messages(channel_id, messages)
+    return sorted(fetched, key=lambda m: float(m["ts"]))
 
-    with_files = list(messages)
-    threads = [m for m in messages if m.get("reply_count", 0) > 0]
-    tracker.threads_total = len(threads)
-    for message in threads:
+
+def _fetch_threads(
+    api: Any, archive: Archive, channel_id: str, parents: list[dict], tracker: _Progress
+) -> list[dict]:
+    """Relit et enregistre les fils de `parents` ; renvoie toutes leurs réponses."""
+    all_replies = []
+    tracker.threads_total = len(parents)
+    for message in parents:
         tracker.update()
         thread_ts = message["ts"]
         replies = [r for r in api.iter_replies(channel_id, thread_ts) if r.get("ts") != thread_ts]
         archive.write_replies(channel_id, thread_ts, replies)
-        with_files.extend(replies)
+        all_replies.extend(replies)
         tracker.threads_done += 1
     tracker.update()
-
-    files = _download_files(api, archive, channel_id, with_files, options.refresh, errors, tracker)
-    return len(messages), files
+    return all_replies
 
 
 def _download_files(

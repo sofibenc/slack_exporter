@@ -46,6 +46,26 @@ Ouvrez ensuite `site/index.html`.
   Les conversations terminées sont sautées et les fichiers déjà téléchargés sont conservés.
 - Options d'`export` : `--types public,private,im,mpim`, `--since AAAA-MM-JJ`,
   `--only <nom|id>` (répétable) et `--refresh` pour tout reprendre de zéro.
+
+## Mettre l'archive à jour
+
+Une relance simple **ne relit pas** les conversations déjà exportées. Pour récupérer ce
+qui s'est passé depuis, utilisez `--update` :
+
+```bash
+.venv/bin/slack-exporter export --out ./archive --update
+.venv/bin/slack-exporter render --archive ./archive --site ./site
+```
+
+Pour chaque conversation déjà exportée, `--update` relit les 30 jours précédant le
+dernier message archivé. Il ajoute les nouveaux messages, met à jour les messages
+modifiés ou supprimés dans cette période, relit les fils qui ont reçu de nouvelles
+réponses et télécharge les nouvelles pièces jointes. Les nouvelles conversations sont
+exportées entièrement.
+
+**Limite :** l'activité sur des messages plus anciens (réaction ou réponse tardive dans
+un vieux fil) n'est vue que par une relecture complète : supprimez `archive/state.json`
+puis relancez `export`, sans `--refresh` pour ne pas retélécharger les fichiers.
 - Les erreurs non bloquantes (conversation inaccessible, fichier introuvable) sont
   listées à la fin, dans `archive/meta.json` et sur la page d'accueil du site.
 

@@ -292,3 +292,95 @@ def test_files_already_downloaded_count_as_done(tmp_path):
     statuses, _ = run_with_progress(FakeApi(conversations=[GENERAL], history=history), tmp_path)
 
     assert statuses[-1] == "⏳ [1/1] #general — messages : 1 · fichiers : 2/2"
+
+
+DAY = 86400
+BASE = 1_700_000_000
+
+
+def ts(days, seconds=0):
+    return f"{BASE + days * DAY + seconds:.6f}"
+
+
+def test_update_appends_new_messages_and_reads_a_30_day_window(tmp_path):
+    first = [msg(ts(0), "a"), msg(ts(10), "b")]
+    run(FakeApi(conversations=[GENERAL], history={"C1": list(reversed(first))}), tmp_path)
+
+    later = FakeApi(conversations=[GENERAL], history={"C1": list(reversed(first + [msg(ts(12), "c")]))})
+    archive, result, logs = run(later, tmp_path, update=True)
+
+    assert [m["text"] for m in archive.read_messages("C1")] == ["a", "b", "c"]
+    assert later.calls_named("history") == [("history", "C1", f"{BASE + 10 * DAY - 30 * DAY:.6f}")]
+    assert logs[-1] == "↻ [1/1] #general : +1 messages, 0 fils mis à jour, 0 fichiers"
+    assert result.messages == 1
+
+
+def test_update_refreshes_the_window_and_keeps_older_messages(tmp_path):
+    first = [msg(ts(0), "ancien"), msg(ts(40), "avant modif"), msg(ts(41), "sera supprimé")]
+    run(FakeApi(conversations=[GENERAL], history={"C1": list(reversed(first))}), tmp_path)
+
+    # Dans Slack : l'ancien message a changé (hors fenêtre), le 2e est modifié, le 3e supprimé.
+    now = [msg(ts(0), "ancien modifié"), msg(ts(40), "après modif", edited={"ts": ts(42)})]
+    archive, _, _ = run(FakeApi(conversations=[GENERAL], history={"C1": list(reversed(now))}), tmp_path, update=True)
+
+    assert [m["text"] for m in archive.read_messages("C1")] == ["ancien", "après modif"]
+
+
+def test_update_rereads_only_new_or_changed_threads(tmp_path):
+    p1 = msg(ts(1), "fil 1", reply_count=1, latest_reply=ts(1, 60))
+    p2 = msg(ts(2), "fil 2", reply_count=1, latest_reply=ts(2, 60))
+    replies = {
+        ("C1", ts(1)): [p1, msg(ts(1, 60), "r1")],
+        ("C1", ts(2)): [p2, msg(ts(2, 60), "r2")],
+    }
+    run(FakeApi(conversations=[GENERAL], history={"C1": [p2, p1]}, replies=replies), tmp_path)
+
+    p1_new = dict(p1, reply_count=2, latest_reply=ts(3))
+    p3 = msg(ts(4), "fil 3", reply_count=1, latest_reply=ts(4, 60))
+    later = FakeApi(
+        conversations=[GENERAL],
+        history={"C1": [p3, p2, p1_new]},
+        replies={
+            ("C1", ts(1)): [p1_new, msg(ts(1, 60), "r1"), msg(ts(3), "r1 bis")],
+            ("C1", ts(2)): [p2, msg(ts(2, 60), "r2")],
+            ("C1", ts(4)): [p3, msg(ts(4, 60), "r3")],
+        },
+    )
+    archive, _, logs = run(later, tmp_path, update=True)
+
+    assert [c[2] for c in later.calls_named("replies")] == [ts(1), ts(4)]
+    assert [r["text"] for r in archive.read_replies("C1", ts(1))] == ["r1", "r1 bis"]
+    assert [r["text"] for r in archive.read_replies("C1", ts(2))] == ["r2"]
+    assert logs[-1] == "↻ [1/1] #general : +1 messages, 2 fils mis à jour, 0 fichiers"
+
+
+def test_update_downloads_new_attachments_only(tmp_path):
+    old = msg(ts(0), "pj", files=[slack_file("F1")])
+    run(FakeApi(conversations=[GENERAL], history={"C1": [old]}), tmp_path)
+
+    later = FakeApi(conversations=[GENERAL], history={"C1": [msg(ts(1), "nouvelle pj", files=[slack_file("F2")]), old]})
+    archive, _, logs = run(later, tmp_path, update=True)
+
+    assert later.calls_named("download") == [("download", slack_file("F2")["url_private_download"])]
+    assert archive.attachment_path("C1", slack_file("F2")).exists()
+    assert logs[-1] == "↻ [1/1] #general : +1 messages, 0 fils mis à jour, 2 fichiers"
+
+
+def test_update_exports_new_conversations_fully(tmp_path):
+    run(FakeApi(conversations=[GENERAL], history={"C1": [msg(ts(0), "a")]}), tmp_path)
+
+    later = FakeApi(conversations=[GENERAL, SECRET],
+                    history={"C1": [msg(ts(0), "a")], "G1": [msg(ts(1), "x")]})
+    archive, _, logs = run(later, tmp_path, update=True)
+
+    assert ("history", "G1", None) in later.calls_named("history")
+    assert archive.read_messages("G1") == [msg(ts(1), "x")]
+    assert logs[-1] == "✓ [2/2] #secret : 1 messages, 0 fichiers"
+    assert archive.load_state()["completed"] == ["C1", "G1"]
+
+
+def test_without_update_completed_conversations_are_not_reread(tmp_path):
+    run(FakeApi(conversations=[GENERAL], history={"C1": [msg(ts(0), "a")]}), tmp_path)
+    later = FakeApi(conversations=[GENERAL], history={"C1": [msg(ts(1), "b"), msg(ts(0), "a")]})
+    run(later, tmp_path)
+    assert later.calls_named("history") == []
