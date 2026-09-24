@@ -52,13 +52,17 @@ def export(
 
     archive.write_json("users.json", list(api.iter_users()))
     conversations = _select_conversations(api, options)
-    archive.write_json("channels.json", conversations)
+    previous = archive.read_json("channels.json", [])
+    archive.write_json("channels.json", _merge_conversations(previous, conversations))
 
     state = {"completed": [], "in_progress": None} if options.refresh else archive.load_state()
     for conv in conversations:
         channel_id = conv["id"]
         label = conv["name"] or channel_id
         if channel_id in state["completed"]:
+            # Les fichiers déjà présents sont sautés : seuls les échecs précédents sont retentés.
+            stored = _stored_messages(archive, channel_id)
+            _download_files(api, archive, channel_id, stored, options.refresh, result.errors)
             log(f"= {label} : déjà exporté")
             continue
         state["in_progress"] = channel_id
@@ -95,6 +99,22 @@ def _write_meta(archive: Archive, identity: dict, errors: list[dict]) -> None:
         "exported_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "errors": errors,
     })
+
+
+def _merge_conversations(previous: list[dict], selected: list[dict]) -> list[dict]:
+    """Garde les conversations d'exports précédents, mises à jour par la sélection courante."""
+    merged = {conv["id"]: conv for conv in previous}
+    merged.update((conv["id"], conv) for conv in selected)
+    return list(merged.values())
+
+
+def _stored_messages(archive: Archive, channel_id: str) -> list[dict]:
+    messages = archive.read_messages(channel_id)
+    stored = list(messages)
+    for message in messages:
+        if message.get("reply_count", 0) > 0:
+            stored.extend(archive.read_replies(channel_id, message["ts"]))
+    return stored
 
 
 def _select_conversations(api: Any, options: ExportOptions) -> list[dict]:

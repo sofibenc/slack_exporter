@@ -41,4 +41,17 @@ def test_build_api_sets_auth_headers_on_client_and_session():
     assert api.client.token == "xoxc-123"
     assert api.client.headers["Cookie"] == "d=xoxd-abc"
     assert api.session.headers["Authorization"] == "Bearer xoxc-123"
-    assert api.session.headers["Cookie"] == "d=xoxd-abc"
+
+
+def test_session_cookie_survives_requests_to_any_slack_host():
+    # Un en-tête Cookie brut est supprimé par requests à chaque redirection ;
+    # le cookie doit être dans le cookie jar, rattaché au domaine slack.com.
+    import requests
+
+    creds = credentials_from_env({"SLACK_TOKEN": "xoxc-123", "SLACK_COOKIE_D": "xoxd-abc"})
+    session = build_api(creds).session
+
+    assert "Cookie" not in session.headers
+    for url in ("https://files.slack.com/files-pri/T1-F1/a.pdf", "https://acme.slack.com/x"):
+        prepared = session.prepare_request(requests.Request("GET", url))
+        assert prepared.headers["Cookie"] == "d=xoxd-abc"

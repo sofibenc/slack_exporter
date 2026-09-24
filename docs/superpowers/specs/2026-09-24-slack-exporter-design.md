@@ -118,6 +118,10 @@ archive/
    5. marquer `completed`.
 5. Écrire `meta.json` avec la liste des erreurs rencontrées.
 
+Une conversation déjà `completed` n'est pas réinterrogée, mais ses fichiers absents
+(échecs précédents) sont retentés à partir des messages stockés. `channels.json` est
+fusionné par identifiant avec celui d'un export précédent, pour qu'un export partiel
+(`--only`, `--types`) ne masque pas les conversations déjà archivées.
 `--refresh` ignore `state.json` et les fichiers déjà présents.
 La progression affiche une ligne par conversation (nom, nombre de messages, fichiers).
 

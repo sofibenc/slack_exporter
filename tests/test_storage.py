@@ -93,3 +93,15 @@ def test_state_defaults_and_round_trip(tmp_path):
     assert archive.load_state() == {"completed": [], "in_progress": None}
     archive.save_state({"completed": ["C1"], "in_progress": "C2"})
     assert archive.load_state() == {"completed": ["C1"], "in_progress": "C2"}
+
+
+def test_sanitize_filename_keeps_extension_when_truncating():
+    name = sanitize_filename("a" * 300 + ".pdf")
+    assert len(name) == 100
+    assert name.endswith("a.pdf")
+
+
+def test_sanitize_filename_strips_trailing_dots():
+    # Windows et OneDrive refusent les noms qui finissent par un point.
+    assert sanitize_filename("rapport.") == "rapport"
+    assert sanitize_filename("x" * 99 + ".") == "x" * 99

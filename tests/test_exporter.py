@@ -182,3 +182,45 @@ def test_meta_is_written_before_conversations_are_exported(tmp_path):
     with pytest.raises(KeyboardInterrupt):
         run(api, tmp_path)
     assert Archive(tmp_path / "archive").read_json("meta.json")["format_version"] == 1
+
+
+def test_rerun_retries_failed_files_of_completed_conversations(tmp_path):
+    bad = slack_file("F1")
+    history = {"C1": [msg("1.0", files=[bad])]}
+    _, first, _ = run(FakeApi(conversations=[GENERAL], history=history,
+                              failing_files={bad["url_private_download"]}), tmp_path)
+    assert first.errors == [{"channel": "C1", "file": "F1", "error": "HTTP 403"}]
+
+    second = FakeApi(conversations=[GENERAL], history=history)
+    archive, result, _ = run(second, tmp_path)
+
+    assert second.calls_named("history") == []
+    assert second.calls_named("download") == [("download", bad["url_private_download"])]
+    assert archive.attachment_path("C1", bad).exists()
+    assert archive.read_json("meta.json")["errors"] == []
+
+
+def test_rerun_keeps_reporting_files_that_still_fail(tmp_path):
+    bad = slack_file("F1")
+    parent = msg("1.0", reply_count=1)
+    reply = msg("1.1", thread_ts="1.0", files=[bad])
+    kwargs = dict(conversations=[GENERAL], history={"C1": [parent]},
+                  replies={("C1", "1.0"): [parent, reply]},
+                  failing_files={bad["url_private_download"]})
+    run(FakeApi(**kwargs), tmp_path)
+
+    archive, result, _ = run(FakeApi(**kwargs), tmp_path)
+
+    assert result.errors == [{"channel": "C1", "file": "F1", "error": "HTTP 403"}]
+    assert archive.read_json("meta.json")["errors"] == result.errors
+
+
+def test_rerun_with_only_keeps_previously_exported_conversations(tmp_path):
+    run(FakeApi(conversations=[GENERAL, SECRET]), tmp_path)
+    renamed = dict(SECRET, name="secret-v2")
+
+    archive, _, _ = run(FakeApi(conversations=[GENERAL, renamed]), tmp_path, only=("secret-v2",))
+
+    assert [(c["id"], c["name"]) for c in archive.read_json("channels.json")] == [
+        ("C1", "general"), ("G1", "secret-v2"),
+    ]

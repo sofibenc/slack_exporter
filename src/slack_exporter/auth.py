@@ -56,7 +56,8 @@ def build_api(credentials: Credentials, *, call_delay: float = 1.2) -> SlackApi:
         ],
     )
     session = requests.Session()
-    session.headers.update(
-        {"Authorization": f"Bearer {credentials.token}", **credentials.extra_headers()}
-    )
+    session.headers["Authorization"] = f"Bearer {credentials.token}"
+    if credentials.cookie_d:
+        # Dans le cookie jar (et non en en-tête brut) pour survivre aux redirections.
+        session.cookies.set("d", credentials.cookie_d, domain=".slack.com")
     return SlackApi(client, session, call_delay=call_delay)

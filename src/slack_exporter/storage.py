@@ -14,11 +14,22 @@ _MAX_NAME_LENGTH = 100
 
 
 def sanitize_filename(name: str) -> str:
-    """Réduit un nom de fichier à [A-Za-z0-9._-], sans '..' ni point initial."""
+    """Réduit un nom de fichier à [A-Za-z0-9._-], sans '..' ni point initial ou final.
+
+    Au-delà de 100 caractères, le nom est tronqué en conservant son extension.
+    """
     cleaned = _UNSAFE_CHARS.sub("_", name)
     while ".." in cleaned:
         cleaned = cleaned.replace("..", "_")
-    cleaned = cleaned.lstrip(".")[:_MAX_NAME_LENGTH]
+    cleaned = cleaned.lstrip(".")
+    if len(cleaned) > _MAX_NAME_LENGTH:
+        stem, dot, suffix = cleaned.rpartition(".")
+        if dot and 0 < len(suffix) <= 10:
+            cleaned = stem[: _MAX_NAME_LENGTH - len(suffix) - 1] + "." + suffix
+        else:
+            cleaned = cleaned[:_MAX_NAME_LENGTH]
+    # Windows et OneDrive refusent les noms qui finissent par un point.
+    cleaned = cleaned.rstrip(".")
     return cleaned or "_"
 
 
