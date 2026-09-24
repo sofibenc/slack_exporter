@@ -61,7 +61,8 @@ def export(out_dir: Path, types: str, since, only: tuple[str, ...], refresh: boo
         refresh=refresh,
     )
     try:
-        result = run_export(build_api(credentials), Archive(out_dir), options, log=click.echo)
+        api = build_api(credentials, notify=click.echo)
+        result = run_export(api, Archive(out_dir), options, log=click.echo)
     except AuthError as exc:
         raise click.ClickException(
             f"Slack a refusé l'authentification ({exc.code}). Vérifiez SLACK_TOKEN et SLACK_COOKIE_D."

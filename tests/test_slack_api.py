@@ -61,13 +61,14 @@ class FakeSession:
         return response
 
 
-def make_api(client=None, session=None, sleeps=None, call_delay=0.0):
+def make_api(client=None, session=None, sleeps=None, call_delay=0.0, notify=None):
     sleeps = sleeps if sleeps is not None else []
     return SlackApi(
         client or FakeClient({}),
         session or FakeSession([]),
         call_delay=call_delay,
         sleep=sleeps.append,
+        notify=notify or (lambda message: None),
     )
 
 
@@ -91,14 +92,16 @@ def test_paginates_with_cursor():
     ]
 
 
-def test_conversations_list_requests_types_and_archived():
-    client = FakeClient({"conversations_list": [{"channels": [{"id": "C1"}]}]})
+def test_conversations_lists_only_the_users_own_conversations():
+    # users.conversations ne renvoie que les conversations dont l'utilisateur est membre,
+    # au lieu de parcourir tous les canaux publics du workspace.
+    client = FakeClient({"users_conversations": [{"channels": [{"id": "C1"}]}]})
     api = make_api(client)
 
     assert list(api.iter_conversations(["public_channel", "im"])) == [{"id": "C1"}]
-    assert client.calls[0][1] == {
+    assert client.calls == [("users_conversations", {
         "types": "public_channel,im", "exclude_archived": False, "limit": 200,
-    }
+    })]
 
 
 def test_history_passes_oldest_and_throttles():
@@ -158,6 +161,16 @@ def test_download_waits_retry_after_on_429(tmp_path):
 
     assert sleeps == [3.0]
     assert len(session.calls) == 2
+
+
+def test_download_rate_limit_wait_is_announced(tmp_path):
+    notices = []
+    session = FakeSession([FakeResponse(status=429, headers={"Retry-After": "30"}), FakeResponse()])
+    api = make_api(session=session, notify=notices.append)
+
+    api.download("https://files/F1", tmp_path / "f")
+
+    assert notices == ["Limite Slack atteinte, reprise dans 30 s…"]
 
 
 def test_download_retries_server_errors_and_network_errors(tmp_path):

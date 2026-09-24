@@ -23,6 +23,7 @@ def fake_api(monkeypatch):
 
     def fake_build_api(credentials, **kwargs):
         received["credentials"] = credentials
+        received["kwargs"] = kwargs
         return api
 
     monkeypatch.setattr(cli, "build_api", fake_build_api)
@@ -54,6 +55,8 @@ def test_export_writes_archive_and_summary(tmp_path, fake_api):
     assert "Export terminé : 2 conversations, 2 messages, 1 fichiers." in result.output
     assert (tmp_path / "a" / "conversations" / "C1" / "messages.jsonl").exists()
     assert fake_api.received["credentials"].token == "xoxp-test"
+    assert "Utilisateurs : 2" in result.output
+    assert fake_api.received["kwargs"]["notify"] is not None
 
 
 def test_export_passes_filters(tmp_path, fake_api):

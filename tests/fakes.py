@@ -32,7 +32,7 @@ class FakeApi:
                  members=None, failing_channels=None, failing_files=(), identity=None):
         self.identity = identity or {
             "ok": True, "team": "Acme", "team_id": "T1",
-            "url": "https://acme.slack.com/", "user_id": "U1",
+            "url": "https://acme.slack.com/", "user": "moi", "user_id": "U1",
         }
         self.users = list(users)
         self.conversations = list(conversations)

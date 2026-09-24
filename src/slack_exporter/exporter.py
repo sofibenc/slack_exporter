@@ -47,11 +47,15 @@ def export(
 ) -> ExportResult:
     """Exporte les conversations sélectionnées. `api` expose l'interface de SlackApi."""
     identity = api.auth_test()
+    log(f"Connecté à {identity.get('team')} en tant que {identity.get('user')}")
     result = ExportResult()
     _write_meta(archive, identity, result.errors)
 
-    archive.write_json("users.json", list(api.iter_users()))
+    users = list(api.iter_users())
+    archive.write_json("users.json", users)
+    log(f"Utilisateurs : {len(users)}")
     conversations = _select_conversations(api, options)
+    log(f"Conversations à exporter : {len(conversations)}")
     previous = archive.read_json("channels.json", [])
     archive.write_json("channels.json", _merge_conversations(previous, conversations))
 
@@ -123,7 +127,9 @@ def _select_conversations(api: Any, options: ExportOptions) -> list[dict]:
         kind = conversation_type(conv)
         if kind not in options.types:
             continue
-        if kind in ("public", "private") and not conv.get("is_member"):
+        # users.conversations ne renvoie que nos conversations ; on écarte seulement
+        # celles explicitement marquées comme quittées.
+        if conv.get("is_member") is False:
             continue
         if options.only and conv["id"] not in options.only and conv.get("name") not in options.only:
             continue

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Mapping
+from typing import Callable, Mapping
 
 import requests
 from slack_sdk import WebClient
@@ -12,7 +12,25 @@ from slack_sdk.http_retry.builtin_handlers import (
     ServerErrorRetryHandler,
 )
 
-from slack_exporter.slack_api import MAX_ATTEMPTS, SlackApi
+from slack_exporter.slack_api import MAX_ATTEMPTS, SlackApi, rate_limit_notice
+
+
+class NotifyingRateLimitHandler(RateLimitErrorRetryHandler):
+    """Comme RateLimitErrorRetryHandler, mais annonce la pause avant d'attendre."""
+
+    def __init__(self, notify: Callable[[str], None], max_retry_count: int) -> None:
+        super().__init__(max_retry_count=max_retry_count)
+        self.notify = notify
+
+    def prepare_for_next_attempt(self, *, state, request, response=None, error=None) -> None:
+        if response is not None:
+            retry_after = next(
+                (v for k, v in response.headers.items() if k.lower() == "retry-after"), None
+            )
+            value = retry_after[0] if isinstance(retry_after, list) else retry_after
+            if value is not None and str(value).isdigit():
+                self.notify(rate_limit_notice(int(value)))
+        super().prepare_for_next_attempt(state=state, request=request, response=response, error=error)
 
 
 class ConfigError(Exception):
@@ -44,13 +62,18 @@ def credentials_from_env(env: Mapping[str, str]) -> Credentials:
     raise ConfigError("SLACK_TOKEN doit être un token utilisateur (xoxp-… ou xoxc-…).")
 
 
-def build_api(credentials: Credentials, *, call_delay: float = 1.2) -> SlackApi:
+def build_api(
+    credentials: Credentials,
+    *,
+    call_delay: float = 1.2,
+    notify: Callable[[str], None] = lambda message: None,
+) -> SlackApi:
     retries = MAX_ATTEMPTS
     client = WebClient(
         token=credentials.token,
         headers=credentials.extra_headers(),
         retry_handlers=[
-            RateLimitErrorRetryHandler(max_retry_count=retries),
+            NotifyingRateLimitHandler(notify, max_retry_count=retries),
             ConnectionErrorRetryHandler(max_retry_count=retries),
             ServerErrorRetryHandler(max_retry_count=retries),
         ],
@@ -60,4 +83,4 @@ def build_api(credentials: Credentials, *, call_delay: float = 1.2) -> SlackApi:
     if credentials.cookie_d:
         # Dans le cookie jar (et non en en-tête brut) pour survivre aux redirections.
         session.cookies.set("d", credentials.cookie_d, domain=".slack.com")
-    return SlackApi(client, session, call_delay=call_delay)
+    return SlackApi(client, session, call_delay=call_delay, notify=notify)

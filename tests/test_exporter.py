@@ -55,7 +55,7 @@ def test_messages_are_stored_in_chronological_order(tmp_path):
 
     assert [m["text"] for m in archive.read_messages("C1")] == ["a", "b", "c"]
     assert result.messages == 3
-    assert logs == ["✓ general : 3 messages, 0 fichiers"]
+    assert logs[-1] == "✓ general : 3 messages, 0 fichiers"
 
 
 def test_thread_replies_are_stored_without_parent(tmp_path):
@@ -157,7 +157,7 @@ def test_resume_skips_completed_and_redoes_interrupted(tmp_path):
 
     assert second.calls_named("history") == [("history", "G1", None)]
     assert second.calls_named("download") == []
-    assert logs[0] == "= general : déjà exporté"
+    assert "= general : déjà exporté" in logs
     assert archive.read_messages("G1") == [msg("2.0", "b")]
     assert archive.load_state() == {"completed": ["C1", "G1"], "in_progress": None}
 
@@ -224,3 +224,22 @@ def test_rerun_with_only_keeps_previously_exported_conversations(tmp_path):
     assert [(c["id"], c["name"]) for c in archive.read_json("channels.json")] == [
         ("C1", "general"), ("G1", "secret-v2"),
     ]
+
+
+def test_logs_progress_of_each_phase(tmp_path):
+    api = FakeApi(users=[{"id": "U1"}, {"id": "U2"}], conversations=[GENERAL, NOT_JOINED, DM])
+    _, _, logs = run(api, tmp_path)
+
+    assert logs[:3] == [
+        "Connecté à Acme en tant que moi",
+        "Utilisateurs : 2",
+        "Conversations à exporter : 2",
+    ]
+
+
+def test_conversation_without_is_member_flag_is_kept(tmp_path):
+    # users.conversations ne renvoie que des conversations dont on est membre,
+    # sans toujours préciser is_member.
+    api = FakeApi(conversations=[{"id": "C3", "name": "projet", "is_channel": True}])
+    archive, _, _ = run(api, tmp_path)
+    assert [c["id"] for c in archive.read_json("channels.json")] == ["C3"]

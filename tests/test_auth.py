@@ -55,3 +55,34 @@ def test_session_cookie_survives_requests_to_any_slack_host():
     for url in ("https://files.slack.com/files-pri/T1-F1/a.pdf", "https://acme.slack.com/x"):
         prepared = session.prepare_request(requests.Request("GET", url))
         assert prepared.headers["Cookie"] == "d=xoxd-abc"
+
+
+def test_rate_limit_handler_announces_wait_before_sleeping(monkeypatch):
+    from slack_sdk.http_retry import HttpRequest, HttpResponse, RetryState
+    from slack_sdk.http_retry import builtin_handlers
+
+    from slack_exporter.auth import NotifyingRateLimitHandler
+
+    events = []
+    monkeypatch.setattr(builtin_handlers.time, "sleep", lambda s: events.append(("sleep", int(s))))
+    handler = NotifyingRateLimitHandler(notify=lambda m: events.append(("notify", m)), max_retry_count=5)
+
+    handler.prepare_for_next_attempt(
+        state=RetryState(),
+        request=HttpRequest(method="POST", url="https://slack.com/api/users.conversations", headers={}),
+        response=HttpResponse(status_code=429, headers={"Retry-After": ["30"]}),
+    )
+
+    assert events == [("notify", "Limite Slack atteinte, reprise dans 30 s…"), ("sleep", 30)]
+
+
+def test_build_api_announces_rate_limits_through_notify():
+    from slack_exporter.auth import NotifyingRateLimitHandler
+
+    notices = []
+    api = build_api(credentials_from_env({"SLACK_TOKEN": "xoxp-123"}), notify=notices.append)
+
+    handlers = [h for h in api.client.retry_handlers if isinstance(h, NotifyingRateLimitHandler)]
+    assert len(handlers) == 1
+    handlers[0].notify("test")
+    assert notices == ["test"]

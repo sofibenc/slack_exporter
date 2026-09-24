@@ -13,6 +13,10 @@ MAX_ATTEMPTS = 5
 PAGE_SIZE = 200
 
 
+def rate_limit_notice(seconds: float) -> str:
+    return f"Limite Slack atteinte, reprise dans {seconds:.0f} s…"
+
+
 class ApiError(Exception):
     """Erreur renvoyée par Slack (`ok: false`), non fatale pour l'export."""
 
@@ -45,11 +49,13 @@ class SlackApi:
         *,
         call_delay: float = 1.2,
         sleep: Callable[[float], None] = time.sleep,
+        notify: Callable[[str], None] = lambda message: None,
     ) -> None:
         self.client = client
         self.session = session
         self._call_delay = call_delay
         self._sleep = sleep
+        self._notify = notify
 
     def _call(self, method: str, **kwargs: Any) -> dict:
         try:
@@ -84,8 +90,9 @@ class SlackApi:
         return self._paginate("users_list", "members")
 
     def iter_conversations(self, types: list[str]) -> Iterator[dict]:
+        """Conversations dont l'utilisateur est membre (pas tous les canaux du workspace)."""
         return self._paginate(
-            "conversations_list", "channels", types=",".join(types), exclude_archived=False
+            "users_conversations", "channels", types=",".join(types), exclude_archived=False
         )
 
     def iter_members(self, channel_id: str) -> Iterator[str]:
@@ -112,6 +119,8 @@ class SlackApi:
             except _RetryableDownload as exc:
                 last_error = str(exc)
                 if attempt < MAX_ATTEMPTS - 1:
+                    if exc.retry_after is not None:
+                        self._notify(rate_limit_notice(exc.retry_after))
                     self._sleep(exc.retry_after if exc.retry_after is not None else 2**attempt)
         raise DownloadError(last_error)
 

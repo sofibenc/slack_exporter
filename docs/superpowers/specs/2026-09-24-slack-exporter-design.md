@@ -103,9 +103,10 @@ archive/
 
 1. `auth.test` : valide le token, récupère l'identité du workspace et de l'utilisateur.
 2. `users.list` (paginé) → `users.json`.
-3. `conversations.list` (paginé, `types` selon `--types`, `exclude_archived=false`)
-   → garder les conversations dont l'utilisateur est membre (`is_member`, ou toujours
-   pour `im`/`mpim`) → appliquer `--only` → `channels.json`.
+3. `users.conversations` (paginé, `types` selon `--types`, `exclude_archived=false`) :
+   uniquement les conversations dont l'utilisateur est membre, sans parcourir tous les
+   canaux publics du workspace → écarter celles marquées `is_member: false` → appliquer
+   `--only` → `channels.json`.
 4. Pour chaque conversation non marquée `completed` dans `state.json` :
    1. marquer `in_progress` ; vider son dossier sauf `files/` ;
    2. `conversations.history` (paginé, `oldest` si `--since`), messages remis en ordre
@@ -123,7 +124,9 @@ Une conversation déjà `completed` n'est pas réinterrogée, mais ses fichiers 
 fusionné par identifiant avec celui d'un export précédent, pour qu'un export partiel
 (`--only`, `--types`) ne masque pas les conversations déjà archivées.
 `--refresh` ignore `state.json` et les fichiers déjà présents.
-La progression affiche une ligne par conversation (nom, nombre de messages, fichiers).
+La progression affiche l'identité connectée, le nombre d'utilisateurs, le nombre de
+conversations à exporter, puis une ligne par conversation (nom, nombre de messages,
+fichiers). Chaque pause imposée par Slack (HTTP 429) est annoncée avec sa durée.
 
 ## 5. Gestion des erreurs
 
