@@ -89,11 +89,27 @@ puis relancez `export`, sans `--refresh` pour ne pas retélécharger les fichier
 - Les erreurs non bloquantes (conversation inaccessible, fichier introuvable) sont
   listées à la fin, dans `archive/meta.json` et sur la page d'accueil du site.
 
+## Rechercher dans les conversations
+
+Le lien **🔍 Rechercher**, en haut de chaque page du site, ouvre `site/search.html` :
+
+- tous les mots doivent être présents, `"une expression"` cherche l'expression exacte ;
+- sans tenir compte des majuscules ni des accents (`reunion` trouve « Réunion ») ;
+- filtres par type (canaux publics, canaux privés, messages directs, groupes), par personne
+  et par période ;
+- la recherche porte sur les messages, les réponses dans les fils et les noms des pièces
+  jointes ; chaque résultat mène au message dans sa conversation.
+
+La recherche fonctionne hors ligne, **site ouvert depuis l'ordinateur** (dossier décompressé
+ou synchronisé avec OneDrive). Elle ne fonctionne pas dans l'aperçu web de Teams ou
+SharePoint, qui bloque les scripts. Après un `export --update`, relancez `render` pour
+mettre l'index à jour.
+
 ## Déposer l'archive dans Teams
 
 Zippez le dossier `site/`, puis déposez-le dans l'onglet *Fichiers* d'un canal Teams
 ou dans OneDrive. Une fois décompressé, ouvrez `index.html` dans le navigateur.
-Tous les liens sont relatifs et la page n'utilise ni JavaScript ni ressource externe.
+Tous les liens sont relatifs et le site n'utilise aucune ressource externe.
 
 ## Tests
 

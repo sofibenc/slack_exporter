@@ -61,3 +61,16 @@ blockquote { margin: 4px 0; padding-left: 10px; border-left: 4px solid var(--bor
 @media (max-width: 600px) {
   .files img { max-width: 100%; }
 }
+.top { display: flex; gap: 16px; flex-wrap: wrap; }
+.search input[type="search"] { width: 100%; font-size: 1.1em; padding: 8px; margin: 8px 0; }
+.search input, .search select, .search button, #more {
+  background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 4px; padding: 4px 6px;
+  font: inherit;
+}
+.filters { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.filters label { display: flex; gap: 4px; align-items: center; color: var(--muted); }
+.results { list-style: none; padding: 0; }
+.result { padding: 8px 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.result .snippet { margin: 4px 0 0; }
+mark { background: #ffe58f; color: #1d1c1d; border-radius: 2px; }
+.message:target { background: var(--mention-bg); outline: 2px solid var(--accent); border-radius: 4px; }

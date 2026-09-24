@@ -1,5 +1,5 @@
 {% macro render_message(m) %}
-<article class="message">
+<article class="message" id="{{ m.anchor }}">
 <div class="head"><span class="author">{{ m.author }}</span> <time datetime="{{ m.dt.isoformat() }}">{{ m.time }}</time>{% if m.edited %} <span class="edited">(modifié)</span>{% endif %}</div>
 <div class="text">{{ m.html }}</div>
 {% if m.files %}
@@ -36,7 +36,7 @@
 </head>
 <body>
 <header>
-<a href="../../index.html">← Toutes les conversations</a>
+<nav class="top"><a href="../../index.html">← Toutes les conversations</a> <a href="../../search.html">🔍 Rechercher</a></nav>
 <h1>{{ title }}</h1>
 {% if years %}
 <nav class="years">{% for y in years %}<a href="{{ y }}.html"{% if y == current_year %} class="current"{% endif %}>{{ y }}</a> {% endfor %}</nav>

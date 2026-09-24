@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Recherche — Archive Slack {{ meta.team or "" }}</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<header>
+<nav class="top"><a href="index.html">← Toutes les conversations</a></nav>
+<h1>Rechercher</h1>
+<p class="meta" id="status">Chargement de l'index…</p>
+</header>
+<main>
+<noscript><p class="errors">La recherche nécessite JavaScript. Ouvrez le site depuis votre ordinateur (dossier décompressé ou synchronisé) : l'aperçu web de Teams ou SharePoint bloque les scripts.</p></noscript>
+<form id="form" class="search">
+<input id="q" type="search" placeholder="Mots-clés, ou &quot;expression exacte&quot;" autocomplete="off">
+<div class="filters">
+<label>Type
+<select id="type">
+<option value="">Tout</option>
+{% for kind, label in type_titles.items() %}
+<option value="{{ kind }}">{{ label }}</option>
+{% endfor %}
+</select>
+</label>
+<label>Personne <input id="author" list="authors" placeholder="Auteur du message"></label>
+<datalist id="authors"></datalist>
+<label>Du <input id="from" type="date"></label>
+<label>au <input id="to" type="date"></label>
+<button type="submit">Rechercher</button>
+</div>
+</form>
+<p class="meta" id="count"></p>
+<ol id="results" class="results"></ol>
+<button id="more" type="button" hidden>Afficher plus</button>
+</main>
+<script src="assets/search-index.js"></script>
+<script src="assets/search.js"></script>
+</body>
+</html>

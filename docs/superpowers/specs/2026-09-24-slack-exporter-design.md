@@ -180,7 +180,26 @@ site/
   (`<img>` limité en CSS) avec un lien vers l'original ; les autres fichiers
   s'affichent en lien avec leur nom et leur taille. Un fichier absent donne
   « fichier non disponible ».
-- **Aucun JavaScript**, aucune ressource externe. Tous les liens sont relatifs.
+- **Pas de JavaScript**, sauf sur la page de recherche. Aucune ressource externe.
+  Tous les liens sont relatifs.
+- **Ancres** : chaque message porte `id="m-<ts avec . remplacé par ->"`.
+
+### Recherche (`search.html`)
+
+- `render` écrit `assets/search-index.js` (`window.SLACK_SEARCH = {...}` : un `.js` et
+  non un `.json`, que les navigateurs refusent de lire en `file://`), `assets/search.js` et
+  `search.html`, liée depuis l'index et chaque conversation.
+- Index : `conversations` = `[{id, title, type}]`, `messages` = une entrée par message et
+  par réponse : `[n° de conversation, auteur, ts entier, texte brut, lien, 1 si réponse]`.
+  Le texte brut vient de `mrkdwn_to_text` (mentions résolues, sans mise en forme),
+  suivi des noms des pièces jointes. Le lien pointe sur la bonne page (année comprise)
+  et, pour une réponse, sur l'ancre du message parent.
+- Correspondance : tous les termes présents, `"expression"` exacte, sans casse ni accents
+  (NFD sans diacritiques). Filtres : type, auteur (sous-chaîne), période en dates
+  locales (bornes incluses). Résultats du plus récent au plus ancien, 100 par page,
+  termes surlignés. Le texte des messages n'est jamais inséré comme HTML.
+- Fonctionne hors ligne en local ; pas dans l'aperçu web de Teams/SharePoint, qui
+  bloque les scripts.
 - **Pagination** : au-delà de 5 000 messages racine, une page par année et un
   sommaire dans `index.html` de la conversation.
 
@@ -233,7 +252,6 @@ Approche TDD avec `pytest`. Aucun test n'appelle le vrai Slack.
 ## 9. Hors périmètre
 
 - Import dans Microsoft Teams (repost ou API d'import).
-- Recherche plein texte dans le site.
 - Détection, par `--update`, de l'activité sur des messages antérieurs à la fenêtre de 30 jours.
 - Emojis personnalisés rendus en image (ils gardent leur texte `:nom:`).
 - Rendu fidèle des Block Kit et des messages d'apps (seul le texte de secours est rendu).

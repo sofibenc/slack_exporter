@@ -1,6 +1,7 @@
 """Génération du site HTML statique à partir de l'archive."""
 from __future__ import annotations
 
+import json
 import shutil
 from collections import defaultdict
 from datetime import datetime, tzinfo
@@ -15,6 +16,7 @@ from slack_exporter.formatting import (
     conversation_title,
     emoji_to_unicode,
     mrkdwn_to_html,
+    mrkdwn_to_text,
     user_display_names,
 )
 from slack_exporter.storage import FORMAT_VERSION, Archive, safe_join
@@ -65,10 +67,32 @@ def render(
 
     renderer.site_dir.mkdir(parents=True, exist_ok=True)
     (renderer.site_dir / "assets").mkdir(exist_ok=True)
-    css = package_files("slack_exporter").joinpath("templates/style.css").read_text(encoding="utf-8")
-    (renderer.site_dir / "assets" / "style.css").write_text(css, encoding="utf-8")
+    templates = package_files("slack_exporter").joinpath("templates")
+    for asset in ("style.css", "search.js"):
+        content = templates.joinpath(asset).read_text(encoding="utf-8")
+        (renderer.site_dir / "assets" / asset).write_text(content, encoding="utf-8")
 
-    summaries = [renderer.conversation(conv, titles[conv["id"]]) for conv in conversations]
+    summaries = [
+        renderer.conversation(conv, titles[conv["id"]], position)
+        for position, conv in enumerate(conversations)
+    ]
+    search_index = {
+        "conversations": [
+            {"id": c["id"], "title": titles[c["id"]], "type": c["type"]} for c in conversations
+        ],
+        "messages": renderer.search_messages,
+    }
+    # Un .js (et non un .json) : les navigateurs refusent de lire un JSON local en file://.
+    (renderer.site_dir / "assets" / "search-index.js").write_text(
+        "window.SLACK_SEARCH = "
+        + json.dumps(search_index, ensure_ascii=False, separators=(",", ":"))
+        + ";\n",
+        encoding="utf-8",
+    )
+    search_html = renderer.env.get_template("search.html").render(
+        meta=meta, type_titles=TYPE_TITLES
+    )
+    (renderer.site_dir / "search.html").write_text(search_html, encoding="utf-8")
     groups = [
         (label, [s for s in summaries if s["type"] == kind])
         for kind, label in TYPE_TITLES.items()
@@ -90,6 +114,9 @@ class _Renderer:
         self.names = names
         self.tz = tz
         self.page_threshold = page_threshold
+        # Une entrée par message ou réponse :
+        # [n° de conversation, auteur, ts entier, texte brut, lien, 1 si réponse dans un fil]
+        self.search_messages: list[list] = []
         self.env = Environment(
             loader=PackageLoader("slack_exporter", "templates"),
             autoescape=select_autoescape(["html"]),
@@ -97,7 +124,7 @@ class _Renderer:
             lstrip_blocks=True,
         )
 
-    def conversation(self, conv: dict, title: str) -> dict:
+    def conversation(self, conv: dict, title: str, position: int) -> dict:
         channel_id = conv["id"]
         out_dir = safe_join(self.site_dir, "c", channel_id)
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -121,6 +148,14 @@ class _Renderer:
             html = template.render(**page, days=_group_by_day(views), years=[], current_year=None)
         (out_dir / "index.html").write_text(html, encoding="utf-8")
 
+        paginated = len(views) > self.page_threshold
+        for view in views:
+            page_name = f"{view['dt'].year}.html" if paginated else "index.html"
+            href = f"c/{channel_id}/{page_name}#{view['anchor']}"
+            self.search_messages.append(_search_entry(position, view, href, in_thread=False))
+            for reply in view["replies"]:
+                self.search_messages.append(_search_entry(position, reply, href, in_thread=True))
+
         return {
             "id": channel_id,
             "type": conv["type"],
@@ -139,16 +174,22 @@ class _Renderer:
                 self.message(channel_id, out_dir, r, with_replies=False)
                 for r in self.archive.read_replies(channel_id, message["ts"])
             ]
+        text = message.get("text") or _attachments_text(message)
+        files = [
+            self.file(channel_id, out_dir, f)
+            for f in message.get("files", [])
+            if f.get("mode") != "tombstone"
+        ]
         return {
             "dt": dt,
+            "anchor": "m-" + message["ts"].replace(".", "-"),
+            "plain": " ".join(
+                part for part in [mrkdwn_to_text(text, self.ctx), *(f["name"] for f in files)] if part
+            ),
             "time": dt.strftime("%H:%M"),
             "author": _author(message, self.names),
-            "html": Markup(mrkdwn_to_html(message.get("text") or _attachments_text(message), self.ctx)),
-            "files": [
-                self.file(channel_id, out_dir, f)
-                for f in message.get("files", [])
-                if f.get("mode") != "tombstone"
-            ],
+            "html": Markup(mrkdwn_to_html(text, self.ctx)),
+            "files": files,
             "reactions": [
                 {"emoji": emoji_to_unicode(r["name"]) or f":{r['name']}:", "count": r.get("count", 0)}
                 for r in message.get("reactions", [])
@@ -174,6 +215,10 @@ class _Renderer:
                 shutil.copy2(source, target)
             view["href"] = f"files/{source.name}"
         return view
+
+
+def _search_entry(position: int, view: dict, href: str, *, in_thread: bool) -> list:
+    return [position, view["author"], int(view["dt"].timestamp()), view["plain"], href, int(in_thread)]
 
 
 def _author(message: dict, names: dict[str, str]) -> str:

@@ -1,3 +1,4 @@
+import json
 from datetime import timezone
 
 import pytest
@@ -201,3 +202,65 @@ def test_render_is_idempotent(tmp_path):
     do_render(tmp_path)
     site, count = do_render(tmp_path)
     assert count == 4
+
+
+def load_search_index(site):
+    source = (site / "assets" / "search-index.js").read_text(encoding="utf-8")
+    prefix = "window.SLACK_SEARCH = "
+    assert source.startswith(prefix) and source.rstrip().endswith(";")
+    return json.loads(source[len(prefix):].rstrip().rstrip(";"))
+
+
+def test_messages_have_anchors(tmp_path):
+    make_archive(tmp_path, messages={"C1": [msg("1710000000.000100", "a")]})
+    site, _ = do_render(tmp_path)
+    assert '<article class="message" id="m-1710000000-000100">' in page(site, "C1")
+
+
+def test_search_index_contains_messages_replies_and_file_names(tmp_path):
+    parent = msg("1710000000.0", "*Réunion* avec <@U2>", reply_count=1,
+                 files=[slack_file("F1", "compte-rendu.pdf")])
+    make_archive(
+        tmp_path,
+        messages={"C1": [parent], "D1": [msg("1710000500.0", "coucou", user="U2")]},
+        replies={("C1", "1710000000.0"): [msg("1710000060.0", "ok &lt;noté&gt;", user="U2")]},
+    )
+    site, _ = do_render(tmp_path)
+    index = load_search_index(site)
+
+    conversations = {c["id"]: c for c in index["conversations"]}
+    assert conversations["C1"] == {"id": "C1", "title": "#general", "type": "public"}
+    assert conversations["D1"] == {"id": "D1", "title": "Alice Martin", "type": "im"}
+    by_text = {m[3]: m for m in index["messages"]}
+    c1 = [c["id"] for c in index["conversations"]].index("C1")
+    assert by_text["Réunion avec @Alice Martin compte-rendu.pdf"] == [
+        c1, "Moi", 1710000000, "Réunion avec @Alice Martin compte-rendu.pdf",
+        "c/C1/index.html#m-1710000000-0", 0,
+    ]
+    assert by_text["ok <noté>"] == [
+        c1, "Alice Martin", 1710000060, "ok <noté>", "c/C1/index.html#m-1710000000-0", 1,
+    ]
+    assert by_text["coucou"][4] == "c/D1/index.html#m-1710000500-0"
+
+
+def test_search_links_point_to_the_year_page(tmp_path):
+    messages = [msg("1700000000.0", "vieux"), msg("1700000100.0", "vieux 2"), msg("1710000000.0", "récent")]
+    make_archive(tmp_path, messages={"C1": messages})
+    site, _ = do_render(tmp_path, page_threshold=2)
+
+    hrefs = {m[3]: m[4] for m in load_search_index(site)["messages"]}
+    assert hrefs["vieux"] == "c/C1/2023.html#m-1700000000-0"
+    assert hrefs["récent"] == "c/C1/2024.html#m-1710000000-0"
+
+
+def test_search_page_is_generated_and_linked(tmp_path):
+    make_archive(tmp_path, messages={"C1": [msg("1710000000.0", "a")]})
+    site, _ = do_render(tmp_path)
+
+    search = (site / "search.html").read_text(encoding="utf-8")
+    assert '<script src="assets/search-index.js"></script>' in search
+    assert '<script src="assets/search.js"></script>' in search
+    assert (site / "assets" / "search.js").exists()
+    assert 'href="search.html"' in (site / "index.html").read_text(encoding="utf-8")
+    assert 'href="../../search.html"' in page(site, "C1")
+    assert "<script" not in page(site, "C1")

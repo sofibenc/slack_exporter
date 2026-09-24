@@ -17,6 +17,9 @@ _ITALIC = re.compile(r"(?<![\w_])_(?=\S)([^_\n]+?)(?<=\S)_(?![\w_])")
 _STRIKE = re.compile(r"(?<![\w~])~(?=\S)([^~\n]+?)(?<=\S)~(?![\w~])")
 _EMOJI = re.compile(r":([a-z0-9_+-]+(?:::skin-tone-[2-6])?):")
 _PLACEHOLDER = re.compile(r"\x00(\d+)\x00")
+_TAG = re.compile(r"<[^>]*>")
+_BLOCK_BOUNDARY = re.compile(r"<br>|</?(?:blockquote|pre)>")
+_SPACES = re.compile(r"\s+")
 
 
 @dataclass
@@ -137,3 +140,9 @@ def mrkdwn_to_html(text: str, ctx: FormatContext) -> str:
     text = _blockquotes(text)
     text = text.replace("\n", "<br>").replace("</blockquote><br>", "</blockquote>")
     return _PLACEHOLDER.sub(lambda m: fragments[int(m.group(1))], text)
+
+
+def mrkdwn_to_text(text: str, ctx: FormatContext) -> str:
+    """Texte brut d'un message (mentions résolues, sans mise en forme), pour la recherche."""
+    rendered = _BLOCK_BOUNDARY.sub(" ", mrkdwn_to_html(text, ctx))
+    return _SPACES.sub(" ", html.unescape(_TAG.sub("", rendered))).strip()

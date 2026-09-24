@@ -1,4 +1,4 @@
-from slack_exporter.formatting import FormatContext, emoji_to_unicode, mrkdwn_to_html
+from slack_exporter.formatting import FormatContext, emoji_to_unicode, mrkdwn_to_html, mrkdwn_to_text
 
 CTX = FormatContext(users={"U1": "Alice"}, channels={"C1": "general"})
 
@@ -121,3 +121,16 @@ def test_time_is_not_taken_for_emoji():
 def test_emoji_to_unicode_ignores_skin_tone():
     assert emoji_to_unicode("+1::skin-tone-3") == "👍"
     assert emoji_to_unicode("perso") is None
+
+
+def test_plain_text_for_search_resolves_mentions_and_drops_markup():
+    text = "*Point* avec <@U1> sur <#C1|general> : <https://ex.com|la doc> &amp; `code`\n:smile:"
+    assert mrkdwn_to_text(text, CTX) == "Point avec @Alice sur #general : la doc & code 😄"
+
+
+def test_plain_text_keeps_html_like_content_as_text():
+    assert mrkdwn_to_text("&lt;script&gt;", CTX) == "<script>"
+
+
+def test_plain_text_separates_quotes_and_code_blocks_from_following_text():
+    assert mrkdwn_to_text("&gt; cité\nsuite ```code```fin", CTX) == "cité suite code fin"
