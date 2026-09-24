@@ -1,0 +1,63 @@
+:root {
+  --bg: #ffffff;
+  --fg: #1d1c1d;
+  --muted: #616061;
+  --border: #e1e1e1;
+  --accent: #1264a3;
+  --mention-bg: #e8f5fa;
+  --code-bg: #f6f6f6;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1a1d21;
+    --fg: #d1d2d3;
+    --muted: #9a9b9d;
+    --border: #35373b;
+    --accent: #4aa3df;
+    --mention-bg: #1d3446;
+    --code-bg: #232529;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0 auto;
+  max-width: 900px;
+  padding: 16px;
+  background: var(--bg);
+  color: var(--fg);
+  font: 15px/1.5 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+a { color: var(--accent); }
+h1 { font-size: 1.6em; margin: 0.4em 0; }
+h2 { font-size: 1.2em; }
+.meta { color: var(--muted); font-size: 0.9em; }
+.conversations { list-style: none; padding: 0; }
+.conversations li { padding: 6px 0; border-bottom: 1px solid var(--border); }
+.day {
+  position: sticky; top: 0; background: var(--bg);
+  border-bottom: 1px solid var(--border); padding: 6px 0; margin-top: 24px;
+  font-size: 0.95em; color: var(--muted);
+}
+.message { padding: 8px 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.message .head { margin-bottom: 2px; }
+.author { font-weight: 700; }
+time, .edited { color: var(--muted); font-size: 0.85em; }
+.mention { background: var(--mention-bg); color: var(--accent); border-radius: 3px; padding: 0 2px; }
+code { background: var(--code-bg); border: 1px solid var(--border); border-radius: 3px; padding: 0 3px; font-size: 0.9em; }
+pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 4px; padding: 8px; overflow-x: auto; }
+pre code { border: 0; padding: 0; }
+blockquote { margin: 4px 0; padding-left: 10px; border-left: 4px solid var(--border); color: var(--muted); }
+.files { list-style: none; padding: 0; margin: 6px 0; }
+.files img { max-width: 360px; max-height: 240px; border: 1px solid var(--border); border-radius: 4px; }
+.missing { color: var(--muted); font-style: italic; }
+.reactions { margin-top: 4px; }
+.reaction { display: inline-block; border: 1px solid var(--border); border-radius: 12px; padding: 0 8px; margin-right: 4px; font-size: 0.9em; }
+.thread { margin: 6px 0 0 16px; }
+.thread summary { cursor: pointer; color: var(--accent); }
+.thread .message { border-bottom: 0; border-left: 2px solid var(--border); padding-left: 10px; }
+.years a { margin-right: 8px; }
+.years a.current { font-weight: 700; text-decoration: none; }
+.errors { color: #b3261e; }
+@media (max-width: 600px) {
+  .files img { max-width: 100%; }
+}

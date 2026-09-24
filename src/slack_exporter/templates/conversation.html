@@ -1,0 +1,57 @@
+{% macro render_message(m) %}
+<article class="message">
+<div class="head"><span class="author">{{ m.author }}</span> <time datetime="{{ m.dt.isoformat() }}">{{ m.time }}</time>{% if m.edited %} <span class="edited">(modifié)</span>{% endif %}</div>
+<div class="text">{{ m.html }}</div>
+{% if m.files %}
+<ul class="files">
+{% for f in m.files %}
+{% if f.href and f.is_image %}
+<li><a href="{{ f.href }}"><img src="{{ f.href }}" alt="{{ f.name }}" loading="lazy"></a></li>
+{% elif f.href %}
+<li><a href="{{ f.href }}">📎 {{ f.name }}</a> <span class="meta">{{ f.size }}</span></li>
+{% else %}
+<li class="missing">📎 {{ f.name }} — fichier non disponible</li>
+{% endif %}
+{% endfor %}
+</ul>
+{% endif %}
+{% if m.reactions %}
+<div class="reactions">{% for r in m.reactions %}<span class="reaction">{{ r.emoji }} {{ r.count }}</span>{% endfor %}</div>
+{% endif %}
+{% if m.replies %}
+<details class="thread">
+<summary>{{ m.replies|length }} réponse{{ "s" if m.replies|length > 1 }}</summary>
+{% for r in m.replies %}{{ render_message(r) }}{% endfor %}
+</details>
+{% endif %}
+</article>
+{% endmacro %}
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }}</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<header>
+<a href="../../index.html">← Toutes les conversations</a>
+<h1>{{ title }}</h1>
+{% if years %}
+<nav class="years">{% for y in years %}<a href="{{ y }}.html"{% if y == current_year %} class="current"{% endif %}>{{ y }}</a> {% endfor %}</nav>
+{% endif %}
+</header>
+<main>
+{% if years and current_year is none %}
+<p>Cette conversation est découpée par année : choisissez une année ci-dessus.</p>
+{% elif not days %}
+<p>Aucun message exporté.</p>
+{% endif %}
+{% for day in days %}
+<h2 class="day">{{ day.label }}</h2>
+{% for m in day.messages %}{{ render_message(m) }}{% endfor %}
+{% endfor %}
+</main>
+</body>
+</html>

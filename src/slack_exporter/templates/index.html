@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Archive Slack — {{ meta.team or "workspace" }}</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<header>
+<h1>Archive Slack — {{ meta.team or "workspace" }}</h1>
+<p class="meta">Exporté le {{ meta.exported_at }}</p>
+</header>
+<main>
+{% for label, items in groups %}
+<section>
+<h2>{{ label }}</h2>
+<ul class="conversations">
+{% for c in items %}
+<li><a href="c/{{ c.id }}/index.html">{{ c.title }}</a> <span class="meta">{{ c.count }} message{{ "s" if c.count != 1 }}{% if c.first %} · {{ c.first }} → {{ c.last }}{% endif %}</span></li>
+{% endfor %}
+</ul>
+</section>
+{% else %}
+<p>Aucune conversation exportée.</p>
+{% endfor %}
+{% if errors %}
+<section class="errors">
+<h2>Erreurs pendant l'export</h2>
+<ul>
+{% for e in errors %}
+<li>{{ e.channel }}{% if e.file %} / fichier {{ e.file }}{% endif %} : {{ e.error }}</li>
+{% endfor %}
+</ul>
+</section>
+{% endif %}
+</main>
+</body>
+</html>
