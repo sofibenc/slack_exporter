@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "slack-exporter"
+version = "0.1.0"
+description = "Exporte des conversations Slack vers une archive HTML consultable"
+requires-python = ">=3.11"
+dependencies = [
+    "slack_sdk>=3.27",
+    "jinja2>=3.1",
+    "click>=8.1",
+    "requests>=2.31",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+slack-exporter = "slack_exporter.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+slack_exporter = ["templates/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
