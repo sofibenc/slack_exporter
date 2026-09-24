@@ -13,28 +13,28 @@ uv venv .venv && uv pip install -e '.[dev]'
 
 ## Obtenir un token
 
-**Option 1 : token d'app utilisateur (`xoxp-…`)**, si votre workspace autorise l'installation d'apps.
+L'outil utilise votre session Slack dans le navigateur : un token `xoxc-…` et le cookie `d`.
 
-1. Sur <https://api.slack.com/apps>, cliquez sur *Create New App* → *From scratch* et choisissez votre workspace.
-2. Dans *OAuth & Permissions* → *User Token Scopes*, ajoutez :
-   `channels:read`, `channels:history`, `groups:read`, `groups:history`,
-   `im:read`, `im:history`, `mpim:read`, `mpim:history`, `users:read`, `files:read`.
-3. Cliquez sur *Install to Workspace*, puis copiez le *User OAuth Token*.
+1. Ouvrez votre workspace Slack **dans un navigateur** (Chrome, Edge ou Firefox, pas
+   l'application de bureau), puis les outils de développement (F12).
+2. Dans l'onglet *Console*, exécutez :
+   ```js
+   Object.values(JSON.parse(localStorage.localConfig_v2).teams).map(t => [t.name, t.url, t.token])
+   ```
+   Copiez le token `xoxc-…` de la ligne correspondant à votre workspace
+   (cette méthode peut changer avec les versions de Slack).
+3. Dans *Application* (Chrome, Edge) ou *Stockage* (Firefox) → *Cookies* →
+   `https://app.slack.com`, **décochez « Show URL-decoded »** si la case existe, puis copiez
+   la valeur du cookie nommé exactement `d`. Elle commence par `xoxd-` et contient des `%2F`.
 
-**Option 2 : session navigateur (`xoxc-…` + cookie `d`)**, si l'installation d'apps est bloquée.
-Vérifiez d'abord que cet usage est conforme aux règles de votre organisation.
-
-1. Ouvrez Slack dans le navigateur, puis les outils de développement (F12).
-2. Dans la console, exécutez
-   `JSON.parse(localStorage.localConfig_v2).teams[Object.keys(JSON.parse(localStorage.localConfig_v2).teams)[0]].token` :
-   le résultat est le token `xoxc-…` (cette méthode peut changer avec les versions de Slack).
-3. Dans *Application* → *Cookies* → `https://app.slack.com`, copiez la valeur du cookie `d` (commence par `xoxd-`).
+Le token reste valable tant que la session est ouverte : se déconnecter de Slack dans ce
+navigateur l'invalide.
 
 ## Utilisation
 
 ```bash
-export SLACK_TOKEN=xoxp-...          # ou xoxc-...
-export SLACK_COOKIE_D=xoxd-...       # seulement avec un token xoxc-
+read -rs SLACK_TOKEN && export SLACK_TOKEN          # Entrée, collez le token xoxc-…, Entrée
+read -rs SLACK_COOKIE_D && export SLACK_COOKIE_D    # Entrée, collez le cookie xoxd-…, Entrée
 
 .venv/bin/slack-exporter export --out ./archive
 .venv/bin/slack-exporter render --archive ./archive --site ./site
@@ -46,6 +46,26 @@ Ouvrez ensuite `site/index.html`.
   Les conversations terminées sont sautées et les fichiers déjà téléchargés sont conservés.
 - Options d'`export` : `--types public,private,im,mpim`, `--since AAAA-MM-JJ`,
   `--only <nom|id>` (répétable) et `--refresh` pour tout reprendre de zéro.
+
+## Exporter les conversations privées
+
+Pour n'exporter que vos messages directs (`im`) et vos conversations de groupe (`mpim`) :
+
+```bash
+.venv/bin/slack-exporter export --out ./archive --types im,mpim
+```
+
+Pour un seul message direct, passez son identifiant (commençant par `D`) à `--only` :
+`--only` n'accepte pas le nom d'une personne, car un message direct n'a pas de nom
+côté Slack. L'identifiant figure dans l'URL de la conversation dans Slack
+(`…/client/T…/D0XXXXXXX`) ou dans `archive/channels.json` après un premier export.
+
+```bash
+.venv/bin/slack-exporter export --out ./archive --only D0XXXXXXX
+```
+
+Ajoutez `private` à `--types` pour inclure aussi les canaux privés :
+`--types private,im,mpim`.
 
 ## Mettre l'archive à jour
 
