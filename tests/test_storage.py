@@ -105,3 +105,11 @@ def test_sanitize_filename_strips_trailing_dots():
     # Windows et OneDrive refusent les noms qui finissent par un point.
     assert sanitize_filename("rapport.") == "rapport"
     assert sanitize_filename("x" * 99 + ".") == "x" * 99
+
+
+def test_canvas_attachments_are_saved_as_html(tmp_path):
+    archive = Archive(tmp_path)
+    canvas = {"id": "F1", "name": "Maquettage", "filetype": "quip", "mimetype": "application/vnd.slack-docs"}
+    assert archive.attachment_path("C1", canvas).name == "F1_Maquettage.html"
+    already = dict(canvas, name="Notes.html")
+    assert archive.attachment_path("C1", already).name == "F1_Notes.html"

@@ -29,7 +29,8 @@ class FakeSlackResponse:
 
 
 class FakeResponse:
-    def __init__(self, status=200, body=b"donnees", headers=None, fail_midway=False):
+    def __init__(self, status=200, body=b"donnees", headers=None, fail_midway=False, redirected=False):
+        self.history = [object()] if redirected else []
         self.status_code = status
         self.body = body
         self.headers = headers if headers is not None else {"Content-Type": "application/pdf"}
@@ -234,3 +235,18 @@ def test_download_gives_up_after_five_attempts(tmp_path):
     assert len(session.calls) == 5
     assert len(sleeps) == 4
     assert list(tmp_path.iterdir()) == []
+
+
+def test_download_accepts_canvas_served_as_html(tmp_path):
+    # Les canevas Slack (application/vnd.slack-docs) sont servis en text/html.
+    session = FakeSession([FakeResponse(headers={"Content-Type": "text/html; charset=utf-8"}, body=b"<h1>Maquettage</h1>")])
+    make_api(session=session).download("https://files/F1", tmp_path / "c.html", "application/vnd.slack-docs")
+    assert (tmp_path / "c.html").read_bytes() == b"<h1>Maquettage</h1>"
+
+
+def test_download_rejects_html_reached_through_a_redirect(tmp_path):
+    # Session expirée : Slack redirige vers sa page de connexion, même pour un canevas.
+    session = FakeSession([FakeResponse(headers={"Content-Type": "text/html"}, redirected=True)])
+    with pytest.raises(DownloadError, match="HTML"):
+        make_api(session=session).download("https://files/F1", tmp_path / "c.html", "application/vnd.slack-docs")
+    assert not (tmp_path / "c.html").exists()

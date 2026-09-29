@@ -2,6 +2,8 @@ import io
 
 from slack_exporter.cli import StatusLine
 
+CLEAR = "\r\x1b[2K"
+
 
 class FakeTerminal(io.StringIO):
     def isatty(self):
@@ -15,7 +17,7 @@ def test_status_is_rewritten_in_place_on_a_terminal():
     status.update("⏳ longue ligne")
     status.update("⏳ court")
 
-    assert out.getvalue() == "\r⏳ longue ligne\r⏳ court       "
+    assert out.getvalue() == CLEAR + "⏳ longue ligne" + CLEAR + "⏳ court"
 
 
 def test_final_line_replaces_the_status():
@@ -26,7 +28,7 @@ def test_final_line_replaces_the_status():
     status.line("✓ fini")
     status.update("⏳ suivant")
 
-    assert out.getvalue() == "\r⏳ abc\r     \r✓ fini\n\r⏳ suivant"
+    assert out.getvalue() == CLEAR + "⏳ abc" + CLEAR + "✓ fini\n" + CLEAR + "⏳ suivant"
 
 
 def test_note_keeps_the_status_below_it():
@@ -36,13 +38,20 @@ def test_note_keeps_the_status_below_it():
     status.update("⏳ abc")
     status.note("Limite Slack atteinte")
 
-    assert out.getvalue() == "\r⏳ abc\r     \rLimite Slack atteinte\n\r⏳ abc"
+    assert out.getvalue() == CLEAR + "⏳ abc" + CLEAR + "Limite Slack atteinte\n" + CLEAR + "⏳ abc"
 
 
 def test_status_is_truncated_to_terminal_width():
     out = FakeTerminal()
     StatusLine(out, width=10).update("x" * 50)
-    assert out.getvalue() == "\r" + "x" * 8
+    assert out.getvalue() == CLEAR + "x" * 9
+
+
+def test_wide_characters_count_as_two_columns():
+    # ⏳ occupe deux colonnes : la ligne ne doit jamais déborder du terminal.
+    out = FakeTerminal()
+    StatusLine(out, width=10).update("⏳" + "x" * 50)
+    assert out.getvalue() == CLEAR + "⏳" + "x" * 7
 
 
 def test_no_status_when_output_is_not_a_terminal():

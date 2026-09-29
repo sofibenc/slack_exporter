@@ -103,7 +103,12 @@ class Archive:
 
     def attachment_path(self, channel_id: str, file: dict) -> Path:
         """Emplacement d'un fichier joint Slack (dict de l'API) dans l'archive."""
-        name = sanitize_filename(f"{file['id']}_{file.get('name') or file['id']}")
+        original = file.get("name") or file["id"]
+        # Les canevas Slack sont téléchargés en HTML : l'extension permet de les ouvrir.
+        is_canvas = file.get("filetype") == "quip" or file.get("mimetype") == "application/vnd.slack-docs"
+        if is_canvas and not original.lower().endswith(".html"):
+            original += ".html"
+        name = sanitize_filename(f"{file['id']}_{original}")
         return safe_join(self.conversation_dir(channel_id), "files", name)
 
     def load_state(self) -> dict:

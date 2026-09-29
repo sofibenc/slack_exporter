@@ -11,6 +11,8 @@ from slack_sdk.errors import SlackApiError as _SdkApiError
 FATAL_ERRORS = frozenset({"invalid_auth", "token_revoked", "not_authed", "account_inactive"})
 MAX_ATTEMPTS = 5
 PAGE_SIZE = 200
+# Types servis en HTML par Slack : pages HTML jointes et canevas.
+HTML_MIMETYPES = ("text/html", "application/vnd.slack-docs")
 
 
 def rate_limit_notice(seconds: float) -> str:
@@ -139,9 +141,11 @@ class SlackApi:
             if status != 200:
                 raise DownloadError(f"HTTP {status}")
             content_type = response.headers.get("Content-Type", "")
-            # Sans authentification valide, Slack répond 200 avec sa page de connexion.
-            if content_type.startswith("text/html") and not (expected_mimetype or "").startswith("text/html"):
-                raise DownloadError("réponse HTML inattendue (token ou cookie invalide ?)")
+            # Sans authentification valide, Slack redirige vers sa page de connexion (HTML).
+            if content_type.startswith("text/html"):
+                expects_html = (expected_mimetype or "").startswith(HTML_MIMETYPES)
+                if not expects_html or getattr(response, "history", None):
+                    raise DownloadError("réponse HTML inattendue (token ou cookie invalide ?)")
             dest.parent.mkdir(parents=True, exist_ok=True)
             partial = dest.with_name(dest.name + ".part")
             try:

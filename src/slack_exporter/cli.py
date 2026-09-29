@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import shutil
 import sys
+import unicodedata
 from datetime import timezone
 from pathlib import Path
 from typing import TextIO
@@ -19,21 +20,34 @@ from slack_exporter.slack_api import AuthError
 from slack_exporter.storage import Archive
 
 
+_CLEAR_LINE = "\r\x1b[2K"  # retour en début de ligne + effacement complet de la ligne
+
+
+def _fit(text: str, columns: int) -> str:
+    """Tronque `text` à `columns` colonnes d'écran (emoji et CJK en occupent deux)."""
+    used = 0
+    for i, char in enumerate(text):
+        used += 2 if unicodedata.east_asian_width(char) in ("W", "F") else 1
+        if used > columns:
+            return text[:i]
+    return text
+
+
 class StatusLine:
-    """Ligne de statut réécrite sur place (`\\r`), affichée seulement dans un terminal."""
+    """Ligne de statut réécrite sur place, affichée seulement dans un terminal."""
 
     def __init__(self, stream: TextIO, width: int | None = None) -> None:
         self._stream = stream
         self._enabled = stream.isatty()
-        # Marge de 2 colonnes : l'emoji ⏳ occupe deux colonnes à l'écran.
-        self._width = (width or shutil.get_terminal_size().columns) - 2
+        # Une colonne de marge : écrire dans la dernière colonne ferait passer à la ligne.
+        self._columns = (width or shutil.get_terminal_size().columns) - 1
         self._current = ""
 
     def update(self, status: str) -> None:
         if not self._enabled:
             return
-        status = status[: self._width]
-        self._stream.write("\r" + status.ljust(len(self._current)))
+        status = _fit(status, self._columns)
+        self._stream.write(_CLEAR_LINE + status)
         self._stream.flush()
         self._current = status
 
@@ -54,7 +68,7 @@ class StatusLine:
 
     def _clear(self) -> None:
         if self._enabled and self._current:
-            self._stream.write("\r" + " " * len(self._current) + "\r")
+            self._stream.write(_CLEAR_LINE)
 
     def _write_line(self, message: str) -> None:
         self._stream.write(message + "\n")
